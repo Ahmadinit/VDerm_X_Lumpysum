@@ -1,0 +1,408 @@
+import React, { useState, useEffect } from "react";
+import { View, Button, Image, StyleSheet, Alert, ActivityIndicator, Text, TouchableOpacity, ScrollView } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import { Ionicons } from "@expo/vector-icons";
+import { BASE_URL } from "../config";
+import { getUserData, UserData } from "../utils/auth";
+import { useNavigation } from "@react-navigation/native";
+import type { StackNavigationProp } from "@react-navigation/stack";
+import type { RootStackParamList } from "../../App";
+
+const DiagnosticScreen = () => {
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [predictionResult, setPredictionResult] = useState<any>(null);
+  const [diagnosisId, setDiagnosisId] = useState<string | null>(null);
+  const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
+
+  useEffect(() => {
+    loadUserData();
+  }, []);
+
+  const loadUserData = async () => {
+    const data = await getUserData();
+    setUserData(data);
+  };
+
+  const handleImagePick = async (type: "camera" | "gallery") => {
+    try {
+      const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+      const libraryPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (cameraPermission.status !== "granted" || libraryPermission.status !== "granted") {
+        Alert.alert("Permission Denied", "We need permission to access your camera and gallery.");
+        return;
+      }
+
+      let result;
+      if (type === "camera") {
+        result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          quality: 0.8,
+        });
+      } else {
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          quality: 0.8,
+        });
+      }
+
+      if (!result.canceled) {
+        setSelectedImage(result.assets[0].uri);
+      }
+    } catch (error) {
+      Alert.alert("Error", "An unexpected error occurred while selecting the image.");
+      console.error(error);
+    }
+  };
+
+  const uploadImageToAPI = async () => {
+    if (!selectedImage) {
+      Alert.alert("Error", "Please select an image first!");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("image", {
+      uri: selectedImage,
+      name: "image.jpg",
+      type: "image/jpeg",
+    } as any);
+
+    setLoading(true);
+    setPredictionResult(null);
+
+    try {
+      const headers: any = {};
+      
+      if (userData?._id) {
+        headers['x-user-id'] = userData._id;
+      }
+
+      const response = await fetch(`${BASE_URL}/images/predicts`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setPredictionResult(data);
+        if (data.diagnosisId) {
+          setDiagnosisId(data.diagnosisId);
+        }
+      } else {
+        Alert.alert("Error", data.message || "An error occurred.");
+      }
+    } catch (error) {
+      Alert.alert("Error", "Failed to upload the image.");
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChatAboutResult = async () => {
+    if (!diagnosisId || !userData?._id) {
+      Alert.alert("Error", "Cannot start chat without diagnosis data");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${BASE_URL}/chat/conversations`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: userData._id,
+          diagnosisId: diagnosisId,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // @ts-ignore
+        navigation.navigate("ChatConversation", {
+          conversationId: data._id,
+          title: data.title,
+        });
+      } else {
+        Alert.alert("Error", data.message || "Failed to create conversation");
+      }
+    } catch (error) {
+      console.error("Error creating conversation:", error);
+      Alert.alert("Error", "Failed to start chat");
+    }
+  };
+
+  const handleReset = () => {
+    setSelectedImage(null);
+    setPredictionResult(null);
+    setDiagnosisId(null);
+  };
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Disease Diagnosis</Text>
+        <Text style={styles.headerSubtitle}>Upload an image for analysis</Text>
+      </View>
+
+      {!selectedImage && !predictionResult && (
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => handleImagePick("camera")}
+          >
+            <Ionicons name="camera" size={32} color="#FFFFFF" />
+            <Text style={styles.actionButtonText}>Take a Photo</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => handleImagePick("gallery")}
+          >
+            <Ionicons name="images" size={32} color="#FFFFFF" />
+            <Text style={styles.actionButtonText}>Choose from Gallery</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {selectedImage && (
+        <View style={styles.imageContainer}>
+          <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
+          
+          {!predictionResult && (
+            <View style={styles.uploadButtonContainer}>
+              {loading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#259D8A" />
+                  <Text style={styles.loadingText}>Analyzing image...</Text>
+                </View>
+              ) : (
+                <>
+                  <TouchableOpacity 
+                    style={styles.uploadButton}
+                    onPress={uploadImageToAPI}
+                  >
+                    <Text style={styles.uploadButtonText}>Analyze Image</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.cancelButton}
+                    onPress={handleReset}
+                  >
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          )}
+        </View>
+      )}
+
+      {predictionResult && (
+        <View style={styles.resultContainer}>
+          <View style={styles.resultHeader}>
+            <Ionicons name="checkmark-circle" size={48} color="#259D8A" />
+            <Text style={styles.resultTitle}>Analysis Complete</Text>
+          </View>
+
+          <View style={styles.resultCard}>
+            <Text style={styles.resultLabel}>Classification:</Text>
+            <Text style={styles.resultValue}>
+              {typeof predictionResult.prediction === 'object' 
+                ? (predictionResult.prediction?.classification || 
+                   predictionResult.prediction?.prediction || "N/A")
+                : (predictionResult.classification || predictionResult.prediction || "N/A")}
+            </Text>
+            
+            <Text style={styles.resultLabel}>Confidence:</Text>
+            <Text style={styles.resultValue}>
+              {typeof predictionResult.prediction === 'object'
+                ? ((predictionResult.prediction?.confidence || 
+                    predictionResult.prediction?.prediction) 
+                   ? (((predictionResult.prediction?.confidence || 
+                        predictionResult.prediction?.prediction) * 100).toFixed(2) + '%')
+                   : "N/A")
+                : (predictionResult.confidence 
+                   ? ((predictionResult.confidence * 100).toFixed(2) + '%')
+                   : "N/A")}
+            </Text>
+          </View>
+
+          {diagnosisId && (
+            <TouchableOpacity 
+              style={styles.chatButton}
+              onPress={handleChatAboutResult}
+            >
+              <Ionicons name="chatbubble-ellipses" size={24} color="#FFFFFF" />
+              <Text style={styles.chatButtonText}>Chat about this result</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity 
+            style={styles.newAnalysisButton}
+            onPress={handleReset}
+          >
+            <Text style={styles.newAnalysisButtonText}>New Analysis</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#F7F8FA",
+  },
+  contentContainer: {
+    padding: 20,
+    paddingTop: 60,
+  },
+  header: {
+    marginBottom: 30,
+    alignItems: "center",
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: "#259D8A",
+    marginBottom: 8,
+  },
+  headerSubtitle: {
+    fontSize: 16,
+    color: "#666",
+  },
+  buttonContainer: {
+    gap: 20,
+  },
+  actionButton: {
+    backgroundColor: "#259D8A",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+    borderRadius: 12,
+    gap: 12,
+  },
+  actionButtonText: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  imageContainer: {
+    alignItems: "center",
+  },
+  imagePreview: {
+    width: 300,
+    height: 300,
+    borderRadius: 12,
+    marginBottom: 20,
+  },
+  uploadButtonContainer: {
+    width: "100%",
+    gap: 12,
+  },
+  loadingContainer: {
+    alignItems: "center",
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: "#259D8A",
+  },
+  uploadButton: {
+    backgroundColor: "#259D8A",
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  uploadButtonText: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  cancelButton: {
+    backgroundColor: "#F2F2F2",
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  cancelButtonText: {
+    color: "#666",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  resultContainer: {
+    alignItems: "center",
+  },
+  resultHeader: {
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  resultTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#333",
+    marginTop: 12,
+  },
+  resultCard: {
+    backgroundColor: "#FFFFFF",
+    padding: 24,
+    borderRadius: 12,
+    width: "100%",
+    marginBottom: 20,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  resultLabel: {
+    fontSize: 14,
+    color: "#888",
+    marginBottom: 4,
+    marginTop: 12,
+  },
+  resultValue: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#333",
+  },
+  chatButton: {
+    backgroundColor: "#259D8A",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    borderRadius: 12,
+    gap: 8,
+    width: "100%",
+    marginBottom: 12,
+  },
+  chatButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  newAnalysisButton: {
+    backgroundColor: "#F2F2F2",
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    width: "100%",
+  },
+  newAnalysisButtonText: {
+    color: "#666",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+});
+
+export default DiagnosticScreen;
