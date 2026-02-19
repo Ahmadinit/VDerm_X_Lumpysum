@@ -64,7 +64,16 @@ const LoginScreen = ({ navigation }: any) => {
             body: JSON.stringify(userData),
         });
 
-        const data = await response.json();
+        let data;
+        try {
+            const text = await response.text();
+            data = JSON.parse(text);
+        } catch (parseError) {
+            console.error('Failed to parse response:', parseError);
+            Alert.alert('Error', 'Backend is not responding properly. Make sure the server is running.');
+            setLoading(false);
+            return;
+        }
 
         if (response.ok) {
             // Store user data in AsyncStorage
@@ -72,11 +81,11 @@ const LoginScreen = ({ navigation }: any) => {
             // Navigate to HomePage on successful login
             navigation.navigate("Home");
         } else {
-            Alert.alert('Error', data.message);
+            Alert.alert('Error', data.message || 'Login failed');
         }
     } catch (error) {
         console.error('Login error:', error);
-        Alert.alert('Error', 'Error during login');
+        Alert.alert('Error', 'Cannot connect to server. Make sure backend is running on ' + BASE_URL);
     } finally {
         setLoading(false);
     }

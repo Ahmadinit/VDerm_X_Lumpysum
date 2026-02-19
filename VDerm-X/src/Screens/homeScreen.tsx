@@ -14,11 +14,14 @@ import { useNavigation } from "@react-navigation/native";
 import type { StackNavigationProp } from "@react-navigation/stack";
 import type { RootStackParamList } from "../../App";
 import { getUserData, clearUserData, UserData } from "../utils/auth";
+import { BASE_URL } from "../config";
+import HistoryScreen from "./historyScreen";
 
 const HomeScreen = () => {
   const [activeTab, setActiveTab] = useState("Chats");
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
   const navigation = useNavigation<StackNavigationProp<RootStackParamList, "Home">>();
 
   useEffect(() => {
@@ -33,6 +36,8 @@ const HomeScreen = () => {
         // Set default active tab based on role
         if (data.role === 'vet') {
           setActiveTab("Appointments");
+        } else {
+          setActiveTab("Chats");
         }
       } else {
         // No user data, redirect to login
@@ -60,6 +65,72 @@ const HomeScreen = () => {
         },
       ]
     );
+  };
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) {
+      Alert.alert("Empty Query", "Please enter a question about your pet");
+      return;
+    }
+
+    if (!userData?._id) {
+      Alert.alert("Error", "User not authenticated");
+      return;
+    }
+
+    try {
+      const userQuestion = searchQuery.trim();
+      const conversationTitle = userQuestion.length > 30 
+        ? `${userQuestion.substring(0, 30)}...` 
+        : userQuestion;
+
+      // Step 1: Create a new conversation
+      const createResponse = await fetch(`${BASE_URL}/chat/conversations`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": userData._id,
+        },
+        body: JSON.stringify({
+          title: conversationTitle,
+        }),
+      });
+
+      const createData = await createResponse.json();
+
+      if (!createResponse.ok || !createData._id) {
+        Alert.alert("Error", "Failed to create conversation");
+        return;
+      }
+
+      const conversationId = createData._id;
+
+      // Step 2: Send the initial message
+      const messageResponse = await fetch(`${BASE_URL}/chat/message`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": userData._id,
+        },
+        body: JSON.stringify({
+          conversationId: conversationId,
+          content: userQuestion,
+        }),
+      });
+
+      if (messageResponse.ok) {
+        setSearchQuery("");
+        navigation.navigate("ChatConversation", {
+          conversationId: conversationId,
+          title: createData.title || "New Chat",
+        });
+      } else {
+        Alert.alert("Error", "Failed to send message");
+      }
+    } catch (error) {
+      console.error("Error creating conversation:", error);
+      Alert.alert("Error", "Failed to start chat");
+    }
   };
 
   if (loading) {
@@ -94,19 +165,21 @@ const HomeScreen = () => {
 
       {/* Tab Navigation */}
       <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "Chats" && styles.activeTab]}
-          onPress={() => {
-            setActiveTab("Chats");
-            navigation.navigate("Chats");
-          }}
-        >
-          <Text
-            style={[styles.tabText, activeTab === "Chats" && styles.activeTabText]}
+        {!isVet && (
+          <TouchableOpacity
+            style={[styles.tab, activeTab === "Chats" && styles.activeTab]}
+            onPress={() => setActiveTab("Chats")}
           >
-            {isVet ? "Consultations" : "Chats"}
-          </Text>
-        </TouchableOpacity>
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "Chats" && styles.activeTabText,
+              ]}
+            >
+              Chats
+            </Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           style={[styles.tab, activeTab === "Appointments" && styles.activeTab]}
           onPress={() => setActiveTab("Appointments")}
@@ -120,34 +193,67 @@ const HomeScreen = () => {
             Appointments
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === "History" && styles.activeTab]}
+          onPress={() => setActiveTab("History")}
+        >
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === "History" && styles.activeTabText,
+            ]}
+          >
+            History
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Main Content */}
-      <View style={styles.content}>
-        <Text style={styles.instructions}>
-          {isVet 
-            ? "Welcome, Dr. " + (userData?.username || "") + "!\nManage your appointments and consultations" 
-            : "Start a new chat here\nAsk anything about your pet"}
-        </Text>
-        {!isVet && (
+      {activeTab === "History" ? (
+        <HistoryScreen />
+      ) : activeTab === "Chats" ? (
+        <View style={styles.content}>
+          <Text style={styles.instructions}>
+            Start a new chat here\nAsk anything about your pet
+          </Text>
           <View style={styles.searchContainer}>
             <TextInput
               style={styles.searchInput}
-              placeholder="Ask here"
+              placeholder="Ask about your pet"
               placeholderTextColor="#A3D7D5"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onSubmitEditing={handleSearch}
             />
-            <TouchableOpacity style={styles.searchButton}>
+            <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
               <Ionicons name="search" size={24} color="#fff" />
             </TouchableOpacity>
           </View>
-        )}
-      </View>
+        </View>
+      ) : (
+        <View style={styles.content}>
+          <Text style={styles.instructions}>
+            {isVet 
+              ? "Welcome, Dr. " + (userData?.username || "") + "!\nManage your appointments and consultations" 
+              : "Manage your appointments here"}
+          </Text>
+        </View>
+      )}
 
       {/* Bottom Navigation */}
       <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navItem}>
-          <Ionicons name="chatbubble-ellipses-outline" size={28} color="#259D8A" />
-          <Text style={styles.navText}>Chats</Text>
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => setActiveTab(isVet ? "Appointments" : "Chats")}
+        >
+          <Ionicons 
+            name="chatbubble-ellipses-outline" 
+            size={28} 
+            color={activeTab === "Chats" ? "#259D8A" : "#A5A5A5"} 
+          />
+          <Text style={activeTab === "Chats" ? styles.navText : styles.navTextInactive}>
+            {isVet ? "Consultations" : "Chats"}
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.navItem}
@@ -222,7 +328,7 @@ const styles = StyleSheet.create({
   },
   tab: {
     paddingVertical: 12,
-    width: "50%",
+    flex: 1,
     alignItems: "center",
   },
   activeTab: {

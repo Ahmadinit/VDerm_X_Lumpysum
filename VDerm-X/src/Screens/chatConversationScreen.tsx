@@ -75,6 +75,11 @@ const ChatConversationScreen = ({ route, navigation }: any) => {
   const handleSendMessage = async () => {
     if (!inputText.trim() || sending) return;
 
+    if (!userData?._id) {
+      Alert.alert("Error", "User not logged in");
+      return;
+    }
+
     const userMessage = inputText.trim();
     setInputText("");
     setSending(true);
@@ -91,14 +96,15 @@ const ChatConversationScreen = ({ route, navigation }: any) => {
     setMessages((prev) => [...prev, tempUserMessage]);
 
     try {
-      const response = await fetch(`${BASE_URL}/chat/messages`, {
+      const response = await fetch(`${BASE_URL}/chat/message`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "x-user-id": userData._id,
         },
         body: JSON.stringify({
           conversationId,
-          message: userMessage,
+          content: userMessage,
         }),
       });
 
@@ -108,7 +114,7 @@ const ChatConversationScreen = ({ route, navigation }: any) => {
         // Replace temp message with actual messages (user + assistant)
         setMessages((prev) => {
           const withoutTemp = prev.filter((m) => m._id !== tempUserMessage._id);
-          return [...withoutTemp, data.userMessage, data.assistantMessage];
+          return [...withoutTemp, data.userMessage, data.aiMessage];
         });
 
         // Scroll to bottom
@@ -135,15 +141,92 @@ const ChatConversationScreen = ({ route, navigation }: any) => {
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
+  // Format markdown text for AI responses
+  const formatMarkdownText = (text: string) => {
+    const lines = text.split('\n');
+    const elements: JSX.Element[] = [];
+    
+    lines.forEach((line, index) => {
+      // Bold headers (## Header or **Header**)
+      if (line.trim().startsWith('##')) {
+        const headerText = line.replace(/^#+\s*/, '').trim();
+        elements.push(
+          <Text key={`header-${index}`} style={styles.headerText}>
+            {headerText}
+          </Text>
+        );
+      }
+      // Bold text wrapped in **text**
+      else if (line.includes('**')) {
+        const parts = line.split('**');
+        const textElements: (string | JSX.Element)[] = [];
+        parts.forEach((part, i) => {
+          if (i % 2 === 1) {
+            // Odd indices are bold
+            textElements.push(
+              <Text key={`bold-${index}-${i}`} style={styles.boldText}>
+                {part}
+              </Text>
+            );
+          } else {
+            textElements.push(part);
+          }
+        });
+        elements.push(
+          <Text key={`line-${index}`} style={styles.regularText}>
+            {textElements}
+          </Text>
+        );
+      }
+      // Bullet points
+      else if (line.trim().startsWith('-') || line.trim().startsWith('•')) {
+        const bulletText = line.replace(/^[-•]\s*/, '').trim();
+        elements.push(
+          <Text key={`bullet-${index}`} style={styles.bulletText}>
+            • {bulletText}
+          </Text>
+        );
+      }
+      // Numbered lists
+      else if (/^\d+\./.test(line.trim())) {
+        elements.push(
+          <Text key={`numbered-${index}`} style={styles.bulletText}>
+            {line.trim()}
+          </Text>
+        );
+      }
+      // Regular text
+      else if (line.trim()) {
+        elements.push(
+          <Text key={`text-${index}`} style={styles.regularText}>
+            {line}
+          </Text>
+        );
+      }
+      // Empty line (spacing)
+      else {
+        elements.push(<View key={`space-${index}`} style={{ height: 8 }} />);
+      }
+    });
+    
+    return elements;
+  };
+
   const renderMessage = ({ item }: { item: Message }) => {
     const isUser = item.role === "user";
 
     return (
       <View style={[styles.messageContainer, isUser ? styles.userMessage : styles.assistantMessage]}>
         <View style={[styles.messageBubble, isUser ? styles.userBubble : styles.assistantBubble]}>
-          <Text style={[styles.messageText, isUser ? styles.userText : styles.assistantText]}>
-            {item.content}
-          </Text>
+          {isUser ? (
+            <Text style={[styles.messageText, styles.userText]}>
+              {item.content}
+            </Text>
+          ) : (
+            <View style={styles.assistantTextContainer}>
+              {formatMarkdownText(item.content)}
+            </View>
+          )}
           <Text style={[styles.messageTime, isUser ? styles.userTime : styles.assistantTime]}>
             {formatTime(item.timestamp)}
           </Text>
@@ -260,6 +343,33 @@ const styles = StyleSheet.create({
   },
   assistantText: {
     color: "#333",
+  },
+  assistantTextContainer: {
+    width: "100%",
+  },
+  headerText: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#259D8A",
+    marginBottom: 6,
+    marginTop: 4,
+  },
+  boldText: {
+    fontWeight: "700",
+    color: "#333",
+  },
+  regularText: {
+    fontSize: 16,
+    lineHeight: 22,
+    color: "#333",
+    marginBottom: 4,
+  },
+  bulletText: {
+    fontSize: 16,
+    lineHeight: 22,
+    color: "#333",
+    marginBottom: 3,
+    paddingLeft: 8,
   },
   messageTime: {
     fontSize: 11,

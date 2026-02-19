@@ -111,14 +111,19 @@ const DiagnosticScreen = () => {
     }
 
     try {
+      // Generate a descriptive title based on the prediction result
+      const classification = predictionResult?.prediction?.classification || predictionResult?.classification || "Diagnosis";
+      const title = `Chat about ${classification} Result`;
+
       const response = await fetch(`${BASE_URL}/chat/conversations`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "x-user-id": userData._id, // Backend requires userId in headers, not body
         },
         body: JSON.stringify({
-          userId: userData._id,
           diagnosisId: diagnosisId,
+          title: title,
         }),
       });
 
@@ -128,7 +133,7 @@ const DiagnosticScreen = () => {
         // @ts-ignore
         navigation.navigate("ChatConversation", {
           conversationId: data._id,
-          title: data.title,
+          title: data.title || title,
         });
       } else {
         Alert.alert("Error", data.message || "Failed to create conversation");
@@ -222,15 +227,26 @@ const DiagnosticScreen = () => {
             
             <Text style={styles.resultLabel}>Confidence:</Text>
             <Text style={styles.resultValue}>
-              {typeof predictionResult.prediction === 'object'
-                ? ((predictionResult.prediction?.confidence || 
-                    predictionResult.prediction?.prediction) 
-                   ? (((predictionResult.prediction?.confidence || 
-                        predictionResult.prediction?.prediction) * 100).toFixed(2) + '%')
-                   : "N/A")
-                : (predictionResult.confidence 
-                   ? ((predictionResult.confidence * 100).toFixed(2) + '%')
-                   : "N/A")}
+              {(() => {
+                // Extract confidence from prediction result
+                let confidenceValue = null;
+                
+                if (typeof predictionResult.prediction === 'object' && predictionResult.prediction?.prediction) {
+                  // prediction.prediction is an array like [0.15, 0.85]
+                  const predArray = predictionResult.prediction.prediction;
+                  if (Array.isArray(predArray)) {
+                    // Get the maximum probability as confidence
+                    confidenceValue = Math.max(...predArray);
+                  }
+                } else if (predictionResult.confidence) {
+                  confidenceValue = predictionResult.confidence;
+                } else if (predictionResult.prediction && Array.isArray(predictionResult.prediction)) {
+                  // prediction is directly an array
+                  confidenceValue = Math.max(...predictionResult.prediction);
+                }
+                
+                return confidenceValue ? ((confidenceValue * 100).toFixed(2) + '%') : "N/A";
+              })()}
             </Text>
           </View>
 

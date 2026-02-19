@@ -86,7 +86,16 @@ const RegisterScreen = ({ navigation }: any) => {
         body: JSON.stringify(payload),
       });
 
-      const data = await response.json();
+      let data;
+      try {
+        const text = await response.text();
+        data = JSON.parse(text);
+      } catch (parseError) {
+        console.error('Failed to parse response:', parseError);
+        Alert.alert('Error', 'Backend is not responding properly. Make sure the server is running.');
+        return;
+      }
+
       if (response.status === 409) {
         Alert.alert("Error", "Email already exists.");
       } else if (response.ok) {
@@ -104,7 +113,7 @@ const RegisterScreen = ({ navigation }: any) => {
       }
     } catch (error) {
       console.error("Signup error:", error);
-      Alert.alert("Error", "An error occurred during signup.");
+      Alert.alert("Error", "Cannot connect to server. Make sure backend is running.");
     }
   };
 
