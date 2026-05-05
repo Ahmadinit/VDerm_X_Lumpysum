@@ -8,6 +8,8 @@ import { VetModule } from './vet/vets.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { DiagnosisModule } from './diagnosis/diagnosis.module';
 import { ChatModule } from './chat/chat.module';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 import * as dotenv from 'dotenv';
 dotenv.config();
 
@@ -36,5 +38,7 @@ if (
     DiagnosisModule,
     ChatModule,
   ],
+  controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}

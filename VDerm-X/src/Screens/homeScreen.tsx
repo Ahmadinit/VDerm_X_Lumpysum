@@ -237,6 +237,22 @@ const HomeScreen = () => {
               ? "Welcome, Dr. " + (userData?.username || "") + "!\nManage your appointments and consultations" 
               : "Manage your appointments here"}
           </Text>
+          {!isVet && (
+            <TouchableOpacity 
+              style={styles.bookButton}
+              onPress={() => navigation.navigate("AppointmentBooking")}
+            >
+              <MaterialIcons name="event-available" size={24} color="#fff" />
+              <Text style={styles.bookButtonText}>Book Appointment</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity 
+            style={styles.historyButton}
+            onPress={() => navigation.navigate("AppointmentsHistory")}
+          >
+            <MaterialIcons name="history" size={24} color="#fff" />
+            <Text style={styles.historyButtonText}>View All Appointments</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -397,6 +413,40 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#A5A5A5",
     marginTop: 5,
+  },
+  bookButton: {
+    flexDirection: "row",
+    backgroundColor: "#0066cc",
+    paddingVertical: 14,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 15,
+    elevation: 3,
+    marginTop: 20,
+  },
+  bookButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    marginLeft: 10,
+  },
+  historyButton: {
+    flexDirection: "row",
+    backgroundColor: "#259D8A",
+    paddingVertical: 14,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 3,
+  },
+  historyButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    marginLeft: 10,
   },
 });
 

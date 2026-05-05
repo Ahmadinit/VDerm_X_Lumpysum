@@ -12,6 +12,9 @@ import VetsScreen from './src/Screens/vetsScreen';
 import DiagnosticScreen from './src/Screens/diagnosticScreen';
 import ChatsScreen from './src/Screens/chatsScreen';
 import ChatConversationScreen from './src/Screens/chatConversationScreen';
+import AppointmentBookingScreen from './src/Screens/appointmentBookingScreen';
+import AppointmentChatScreen from './src/Screens/appointmentChatScreen';
+import AppointmentsHistoryScreen from './src/Screens/appointmentsHistoryScreen';
 import { BASE_URL } from './src/config';
 
 // Define the param list for all screens
@@ -25,6 +28,9 @@ export type RootStackParamList = {
   Diagnosis: undefined;
   Chats: undefined;
   ChatConversation: { conversationId: string; title: string };
+  AppointmentBooking: { selectedVet?: any };
+  AppointmentChat: { appointmentId: string };
+  AppointmentsHistory: undefined;
 };
 
 // Create a stack navigator
@@ -57,7 +63,7 @@ const App = () => {
         <Stack.Screen
           name="Launch"
           component={LaunchScreen}
-          options={{ headerShown: false }} // Hide the default header
+          options={{ headerShown: false }}
         />
         <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }}/>
         <Stack.Screen name="Register" component={RegisterScreen} options={{ headerShown: false }}/>
@@ -72,6 +78,39 @@ const App = () => {
           options={{ 
             headerShown: true,
             headerStyle: { backgroundColor: '#259D8A' },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: { fontWeight: '600' },
+          }}
+        />
+        <Stack.Screen 
+          name="AppointmentBooking"
+          component={AppointmentBookingScreen}
+          options={{ 
+            headerShown: true,
+            headerTitle: 'Book Appointment',
+            headerStyle: { backgroundColor: '#0066cc' },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: { fontWeight: '600' },
+          }}
+        />
+        <Stack.Screen 
+          name="AppointmentChat"
+          component={AppointmentChatScreen}
+          options={{ 
+            headerShown: true,
+            headerTitle: 'Chat with Vet',
+            headerStyle: { backgroundColor: '#0066cc' },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: { fontWeight: '600' },
+          }}
+        />
+        <Stack.Screen 
+          name="AppointmentsHistory"
+          component={AppointmentsHistoryScreen}
+          options={{ 
+            headerShown: true,
+            headerTitle: 'My Appointments',
+            headerStyle: { backgroundColor: '#0066cc' },
             headerTintColor: '#FFFFFF',
             headerTitleStyle: { fontWeight: '600' },
           }}

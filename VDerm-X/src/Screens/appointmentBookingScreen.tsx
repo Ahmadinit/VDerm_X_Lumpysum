@@ -35,7 +35,7 @@ interface DiagnosisData {
   analysis: string;
 }
 
-const AppointmentBookingScreen = ({ navigation }: any) => {
+const AppointmentBookingScreen = ({ navigation, route }: any) => {
   const [step, setStep] = useState(1); // 1: Select Vet, 2: Select Date/Time, 3: Share Data, 4: Confirm
   const [vets, setVets] = useState<Vet[]>([]);
   const [selectedVet, setSelectedVet] = useState<Vet | null>(null);
@@ -52,10 +52,14 @@ const AppointmentBookingScreen = ({ navigation }: any) => {
 
   useEffect(() => {
     loadUserData();
-    if (step === 1) {
+    // Check if a vet was passed in route params
+    if (route?.params?.selectedVet) {
+      setSelectedVet(route.params.selectedVet);
+      setStep(2); // Skip to date/time selection
+    } else if (step === 1) {
       fetchVets();
     }
-  }, [step]);
+  }, [route?.params?.selectedVet]);
 
   const loadUserData = async () => {
     try {

@@ -56,8 +56,8 @@ const VetsScreen = ({ navigation }: { navigation: any }) => {
   );
 
   const handleBookAppointment = (vet: Vet) => {
-    // TODO: Navigate to appointment booking screen
-    Alert.alert("Coming Soon", `Book appointment with Dr. ${vet.username}`);
+    // Navigate to appointment booking screen and pass the selected vet
+    navigation.navigate("AppointmentBooking", { selectedVet: vet });
   };
 
   const getInitials = (name: string) => {

@@ -16,14 +16,62 @@ function Prepend-PathIfExists($pathValue) {
     }
 }
 
+function Resolve-WingetCommand {
+    $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
+    if ($wingetCmd -and (Test-Path $wingetCmd.Source)) {
+        return $wingetCmd.Source
+    }
+
+    $windowsAppsWinget = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\winget.exe"
+    if (Test-Path $windowsAppsWinget) {
+        return $windowsAppsWinget
+    }
+
+    $appInstaller = Get-AppxPackage -Name Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue |
+        Sort-Object Version -Descending |
+        Select-Object -First 1
+
+    if ($appInstaller -and $appInstaller.InstallLocation) {
+        $installedWinget = Join-Path $appInstaller.InstallLocation "winget.exe"
+        if (Test-Path $installedWinget) {
+            return $installedWinget
+        }
+    }
+
+    return $null
+}
+
+function Resolve-NgrokCommand {
+    $ngrokCmd = Get-Command ngrok -ErrorAction SilentlyContinue
+    if ($ngrokCmd -and (Test-Path $ngrokCmd.Source)) {
+        return $ngrokCmd.Source
+    }
+
+    $wingetPackageRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages\Ngrok.Ngrok_Microsoft.Winget.Source_8wekyb3d8bbwe"
+    if (Test-Path $wingetPackageRoot) {
+        $ngrokExe = Get-ChildItem $wingetPackageRoot -Recurse -File -Filter ngrok.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($ngrokExe) {
+            return $ngrokExe.FullName
+        }
+    }
+
+    return $null
+}
+
 Write-Host "[Step 1/10] Checking & Installing Prerequisites..." -ForegroundColor Yellow
 Write-Host ""
 
 # Ensure winget exists
-if (-not (Test-Command winget)) {
-    Write-Host "winget not found. Please install App Installer from Microsoft Store." -ForegroundColor Red
+Prepend-PathIfExists "$env:LOCALAPPDATA\Microsoft\WindowsApps"
+$WINGET_CMD = Resolve-WingetCommand
+if (-not $WINGET_CMD) {
+    Write-Host "winget not found in this shell." -ForegroundColor Red
+    Write-Host "If App Installer is already installed:" -ForegroundColor Yellow
+    Write-Host "1) Enable 'App Installer' in Settings > Apps > Advanced app settings > App execution aliases" -ForegroundColor Yellow
+    Write-Host "2) Restart PowerShell/VS Code terminal" -ForegroundColor Yellow
     exit 1
 }
+Write-Host "winget OK: $WINGET_CMD" -ForegroundColor Green
 
 # NODE 18 (FORCED)
 Write-Host "Ensuring Node.js 18..." -ForegroundColor Cyan
@@ -37,7 +85,7 @@ if (Test-Command node) {
 
 if ($nodeVersion -notmatch "^v18") {
     Write-Host "Node 18 not active. Installing Node.js 18..." -ForegroundColor Yellow
-    winget install $targetNodePackage --silent --accept-package-agreements --accept-source-agreements | Out-Null
+    & $WINGET_CMD install $targetNodePackage --silent --accept-package-agreements --accept-source-agreements | Out-Null
 }
 
 Prepend-PathIfExists "$env:ProgramFiles\nodejs"
@@ -130,7 +178,7 @@ if (Test-Command py) {
 if (-not $python310Path) {
     Write-Host "Python 3.10 not found. Installing..." -ForegroundColor Yellow
     
-    winget install Python.Python.3.10 --silent --accept-package-agreements --accept-source-agreements | Out-Null
+    & $WINGET_CMD install Python.Python.3.10 --silent --accept-package-agreements --accept-source-agreements | Out-Null
 
     if (Test-Command py) {
         $pyList = py -0 2>$null
@@ -187,7 +235,7 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 Write-Host "Installing WebSocket packages for real-time chat..." -ForegroundColor Cyan
-& $NPM_CMD install socket.io @nestjs/websockets @nestjs/platform-socket.io --save
+& $NPM_CMD install socket.io@^4.7.5 @nestjs/websockets@^10.4.8 @nestjs/platform-socket.io@^10.4.8 --save
 if ($LASTEXITCODE -eq 0) {
     Write-Host "WebSocket packages installed successfully" -ForegroundColor Green
 } else {
@@ -403,18 +451,18 @@ Write-Host ""
 Write-Host "[Step 10/11] Creating Backend URL for frontend..." -ForegroundColor Yellow
 $publicUrl = $null
 
-$ngrokCmd = Get-Command ngrok -ErrorAction SilentlyContinue
+$ngrokCmd = Resolve-NgrokCommand
 if (-not $ngrokCmd) {
     Write-Host "ngrok not found, attempting install..." -ForegroundColor Yellow
-    winget install Ngrok.Ngrok --silent --accept-package-agreements --accept-source-agreements | Out-Null
-    $ngrokCmd = Get-Command ngrok -ErrorAction SilentlyContinue
+    & $WINGET_CMD install Ngrok.Ngrok --silent --accept-package-agreements --accept-source-agreements | Out-Null
+    $ngrokCmd = Resolve-NgrokCommand
 } else {
     Write-Host "ngrok already available, skipping installation" -ForegroundColor Green
 }
 
 if ($ngrokCmd) {
     Write-Host "Starting backend ngrok tunnel in separate window..." -ForegroundColor Cyan
-    Start-Process powershell -ArgumentList @("-NoExit", "-Command", "ngrok http 3000") -WindowStyle Normal
+    Start-Process powershell -ArgumentList @("-NoExit", "-Command", "& '$ngrokCmd' http 3000") -WindowStyle Normal
 
     for ($i = 0; $i -lt 30; $i++) {
         try {
@@ -454,9 +502,10 @@ Write-Host ""
 # Step 11: Start Frontend
 Write-Host "[Step 11/11] Starting Frontend with Expo Go (Tunnel with LAN fallback)..." -ForegroundColor Yellow
 Set-Location VDerm-X
-Write-Host "Starting Expo with tunnel mode for Expo Go app..." -ForegroundColor Cyan
+Write-Host "Starting Expo with tunnel mode first; LAN fallback is built into the script..." -ForegroundColor Cyan
 Write-Host "Scan the QR code with Expo Go app on your phone" -ForegroundColor Cyan
-$frontendStartCommand = "cd '$PWD'; `$NPX_CMD='$NPX_CMD'; & `"`$NPX_CMD`" expo start --tunnel; if (`$LASTEXITCODE -ne 0) { Write-Host 'Tunnel failed. Falling back to LAN mode...' -ForegroundColor Yellow; & `"`$NPX_CMD`" expo start --lan }"
+$frontendNpxCmd = ($NPX_CMD -replace "'", "''")
+$frontendStartCommand = "cd '$PWD'; `$npxCmd = '$frontendNpxCmd'; `$env:EXPO_DEVTOOLS_LISTEN_ADDRESS='0.0.0.0'; & `$npxCmd expo start --tunnel; if (`$LASTEXITCODE -ne 0) { Write-Host 'Tunnel failed. Falling back to LAN mode...' -ForegroundColor Yellow; & `$npxCmd expo start --lan }"
 Start-Process powershell -ArgumentList @("-NoExit", "-Command", $frontendStartCommand) -WindowStyle Normal
 Write-Host "Frontend starting in new window..." -ForegroundColor Green
 Set-Location ..

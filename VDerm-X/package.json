@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
-    "start": "expo start --tunnel",
+    "start": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"expo start --tunnel; if ($LASTEXITCODE -ne 0) { Write-Host 'Tunnel failed. Falling back to LAN mode...' -ForegroundColor Yellow; expo start --lan }\"",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web"
