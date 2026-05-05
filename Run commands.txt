@@ -1,0 +1,39 @@
+Run commands 
+
+
+
+# Navigate to backend
+cd backend
+
+# Activate Python virtual environment
+.\.venv\Scripts\Activate.ps1
+
+# Add Node to PATH (if npm not found)
+$env:PATH = "C:\Program Files\nodejs;$env:PATH"
+
+# Install dependencies (first time only)
+npm install --force
+
+# Start backend development server
+npm run start:dev
+
+-----------------------------------------------------------------
+-----------------------------------------------------------------
+-----------------------------------------------------------------
+# Navigate to frontend
+cd VDerm-X
+
+# Add Node to PATH (if npm not found)
+$env:PATH = "C:\Program Files\nodejs;$env:PATH"
+
+# Install dependencies (first time only)
+npm install --force
+
+# Install socket.io-client for WebSocket
+npm install socket.io-client@^4.7.0
+
+# Start Expo - TRY TUNNEL FIRST
+npx expo start --tunnel
+
+# IF TUNNEL FAILS, use LAN mode instead:
+# npx expo start --lan
