@@ -44,3 +44,7 @@ build/
 # Uploads folder (temporary user uploads)
 backend/uploads/*
 !backend/uploads/.gitkeep
+
+# Environment variables
+.env
+*.env
