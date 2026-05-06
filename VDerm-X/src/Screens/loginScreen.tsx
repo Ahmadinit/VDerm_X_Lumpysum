@@ -78,8 +78,8 @@ const LoginScreen = ({ navigation }: any) => {
         if (response.ok) {
             // Store user data in AsyncStorage
             await storeUserData(data);
-            // Navigate to HomePage on successful login
-            navigation.navigate("Home");
+          // Navigate by role on successful login
+          navigation.replace(data.role === 'vet' ? 'VetDashboard' : 'Home');
         } else {
             Alert.alert('Error', data.message || 'Login failed');
         }

@@ -11,6 +11,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getUserData } from '../utils/auth';
 
 interface Appointment {
   _id: string;
@@ -39,6 +40,12 @@ const AppointmentsHistoryScreen = ({ navigation }: any) => {
 
   const loadUserData = async () => {
     try {
+      const user = await getUserData();
+      if (user?.role === 'vet') {
+        navigation.replace('VetAppointments');
+        return;
+      }
+
       const userId = await AsyncStorage.getItem('userId');
       const apiUrl = await AsyncStorage.getItem('apiUrl');
       if (userId) setUserId(userId);

@@ -162,8 +162,18 @@ export class ImageControllerr {
           { encoding: 'utf8', env: { ...process.env, PYTHONIOENCODING: 'utf-8' } },
           (error, stdout, stderr) => {
           if (error) {
-            console.error("Python script execution error:", stderr || error.message);  // Log script errors
-            reject(`Error: ${stderr || error.message}`);
+            const raw = stderr || error.message || '';
+            console.error("Python script execution error:", raw);  // Log script errors
+
+            // Detect common TensorFlow Windows DLL import error and return a helpful message
+            if (raw.includes('msvcp140_1.dll') || raw.includes('Could not find the DLL') || raw.includes('TensorFlow requires')) {
+              const friendly = 'TensorFlow is not available on the server. Install the Microsoft C++ Redistributable for Visual Studio 2015-2019 and ensure TensorFlow is installed correctly in the Python environment.';
+              console.error('TensorFlow import error detected. Suggesting install instructions.');
+              reject(`TF_ERROR:${friendly}`);
+              return;
+            }
+
+            reject(`Error: ${raw}`);
             return;
           }
 
@@ -217,8 +227,15 @@ export class ImageControllerr {
         throw error;
       }
 
+      // If we got a TF_ERROR marker from the Python runner, return a clear message
+      const rawMessage = typeof error === 'string' ? error : (error && (error as any).message) || '';
+      if (rawMessage && String(rawMessage).startsWith('TF_ERROR:')) {
+        const userMessage = String(rawMessage).replace(/^TF_ERROR:/, '');
+        throw new InternalServerErrorException(userMessage);
+      }
+
       throw new InternalServerErrorException(
-        error?.message || 'An error occurred while processing the image.',
+        rawMessage || 'An error occurred while processing the image.',
       );
     }
   }

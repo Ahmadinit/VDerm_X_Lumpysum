@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Image, Animated } from "react-native";
+import { getUserData } from "../utils/auth";
 
 const LaunchScreen = ({ navigation }: any) => {
   const logoOpacity = useRef(new Animated.Value(0)).current; // For logo fade-in
@@ -8,6 +9,24 @@ const LaunchScreen = ({ navigation }: any) => {
   const textScale = useRef(new Animated.Value(0.8)).current; // For text scaling
 
   useEffect(() => {
+    const redirectIfLoggedIn = async () => {
+      try {
+        const user = await getUserData();
+        if (user) {
+          // Validate role and default to 'user' if invalid
+          const validRole = (user.role === 'vet' || user.role === 'user') ? user.role : 'user';
+          console.log('User found with role:', validRole);
+          navigation.replace(validRole === 'vet' ? 'VetDashboard' : 'Home');
+        } else {
+          console.log('No user data found, staying on Launch');
+        }
+      } catch (error) {
+        console.error('Error checking user login status:', error);
+      }
+    };
+
+    redirectIfLoggedIn();
+
     Animated.sequence([
       // Logo animation: fade in and slide down
       Animated.parallel([

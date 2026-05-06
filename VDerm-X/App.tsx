@@ -15,6 +15,10 @@ import ChatConversationScreen from './src/Screens/chatConversationScreen';
 import AppointmentBookingScreen from './src/Screens/appointmentBookingScreen';
 import AppointmentChatScreen from './src/Screens/appointmentChatScreen';
 import AppointmentsHistoryScreen from './src/Screens/appointmentsHistoryScreen';
+import VetDashboardScreen from './src/Screens/vetDashboardScreen';
+import VetAppointmentsScreen from './src/Screens/vetAppointmentsScreen';
+import VetChatInboxScreen from './src/Screens/vetChatInboxScreen';
+import VetDiagnosticReviewScreen from './src/Screens/vetDiagnosticReviewScreen';
 import { BASE_URL } from './src/config';
 
 // Define the param list for all screens
@@ -31,6 +35,10 @@ export type RootStackParamList = {
   AppointmentBooking: { selectedVet?: any };
   AppointmentChat: { appointmentId: string };
   AppointmentsHistory: undefined;
+  VetDashboard: undefined;
+  VetAppointments: undefined;
+  VetChatInbox: undefined;
+  VetDiagnosticReview: undefined;
 };
 
 // Create a stack navigator
@@ -111,6 +119,44 @@ const App = () => {
             headerShown: true,
             headerTitle: 'My Appointments',
             headerStyle: { backgroundColor: '#0066cc' },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: { fontWeight: '600' },
+          }}
+        />
+        <Stack.Screen
+          name="VetDashboard"
+          component={VetDashboardScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="VetAppointments"
+          component={VetAppointmentsScreen}
+          options={{
+            headerShown: true,
+            headerTitle: 'Vet Appointments',
+            headerStyle: { backgroundColor: '#0F172A' },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: { fontWeight: '600' },
+          }}
+        />
+        <Stack.Screen
+          name="VetChatInbox"
+          component={VetChatInboxScreen}
+          options={{
+            headerShown: true,
+            headerTitle: 'Consultation Inbox',
+            headerStyle: { backgroundColor: '#0F172A' },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: { fontWeight: '600' },
+          }}
+        />
+        <Stack.Screen
+          name="VetDiagnosticReview"
+          component={VetDiagnosticReviewScreen}
+          options={{
+            headerShown: true,
+            headerTitle: 'Diagnostic Review',
+            headerStyle: { backgroundColor: '#0F172A' },
             headerTintColor: '#FFFFFF',
             headerTitleStyle: { fontWeight: '600' },
           }}

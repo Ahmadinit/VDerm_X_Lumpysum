@@ -33,14 +33,16 @@ const HomeScreen = () => {
       const data = await getUserData();
       if (data) {
         setUserData(data);
-        // Set default active tab based on role
+        // Validate role: if it's 'vet', redirect to VetDashboard
         if (data.role === 'vet') {
-          setActiveTab("Appointments");
-        } else {
-          setActiveTab("Chats");
+          console.log('Vet user redirected from Home to VetDashboard');
+          navigation.replace('VetDashboard');
+          return;
         }
+        setActiveTab("Chats");
       } else {
         // No user data, redirect to login
+        console.log('No user data found, redirecting to Login');
         navigation.replace("Login");
       }
     } catch (error) {

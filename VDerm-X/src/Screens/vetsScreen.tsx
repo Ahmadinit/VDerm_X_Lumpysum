@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { BASE_URL } from "../config";
+import { getUserData } from "../utils/auth";
 
 interface Vet {
   _id: string;
@@ -28,7 +29,16 @@ const VetsScreen = ({ navigation }: { navigation: any }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchVets();
+    const load = async () => {
+      const user = await getUserData();
+      if (user?.role === 'vet') {
+        navigation.replace('VetDashboard');
+        return;
+      }
+      fetchVets();
+    };
+
+    load();
   }, []);
 
   const fetchVets = async () => {

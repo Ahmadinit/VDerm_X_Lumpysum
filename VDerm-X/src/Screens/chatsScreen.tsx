@@ -46,6 +46,10 @@ const ChatsScreen = () => {
     const data = await getUserData();
     setUserData(data);
     if (data) {
+      if (data.role === 'vet') {
+        navigation.replace('VetChatInbox');
+        return;
+      }
       fetchConversations();
     }
   };

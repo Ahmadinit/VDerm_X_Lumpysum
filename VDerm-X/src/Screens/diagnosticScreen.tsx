@@ -23,6 +23,10 @@ const DiagnosticScreen = () => {
   const loadUserData = async () => {
     const data = await getUserData();
     setUserData(data);
+    if (data?.role === 'vet') {
+      navigation.replace('VetDashboard');
+      return;
+    }
   };
 
   const handleImagePick = async (type: "camera" | "gallery") => {
@@ -38,12 +42,12 @@ const DiagnosticScreen = () => {
       let result;
       if (type === "camera") {
         result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          mediaTypes: 'images',
           quality: 0.8,
         });
       } else {
         result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          mediaTypes: 'images',
           quality: 0.8,
         });
       }

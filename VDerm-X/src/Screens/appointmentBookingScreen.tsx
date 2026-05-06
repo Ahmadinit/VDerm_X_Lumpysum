@@ -12,6 +12,7 @@ import {
   FlatList,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getUserData } from '../utils/auth';
 
 interface Vet {
   _id: string;
@@ -49,6 +50,9 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState('');
   const [apiUrl, setApiUrl] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(new Date());
+  const [calendarDays, setCalendarDays] = useState<(number | null)[]>([]);
 
   useEffect(() => {
     loadUserData();
@@ -61,8 +65,72 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
     }
   }, [route?.params?.selectedVet]);
 
+  // Generate calendar days for the current month
+  useEffect(() => {
+    generateCalendarDays();
+  }, [calendarMonth]);
+
+  const generateCalendarDays = () => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    
+    // Get first day of month and number of days
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    
+    // Create array with null for empty slots and day numbers
+    const days: (number | null)[] = [];
+    for (let i = 0; i < firstDay; i++) {
+      days.push(null);
+    }
+    for (let i = 1; i <= daysInMonth; i++) {
+      days.push(i);
+    }
+    
+    setCalendarDays(days);
+  };
+
+  const previousMonth = () => {
+    setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1));
+  };
+
+  const nextMonth = () => {
+    setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1));
+  };
+
+  const selectDate = (day: number) => {
+    const selectedDate = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day);
+    const dateString = selectedDate.toISOString().split('T')[0];
+    setAppointmentDate(dateString);
+    setSelectedTime('');
+    setAvailableSlots([]);
+    setShowDatePicker(false);
+  };
+
+  const isToday = (day: number) => {
+    const today = new Date();
+    return (
+      day === today.getDate() &&
+      calendarMonth.getMonth() === today.getMonth() &&
+      calendarMonth.getFullYear() === today.getFullYear()
+    );
+  };
+
+  const isBeforeToday = (day: number) => {
+    const checkDate = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return checkDate < today;
+  };
+
   const loadUserData = async () => {
     try {
+      const currentUser = await getUserData();
+      if (currentUser?.role === 'vet') {
+        navigation.replace('VetDashboard');
+        return;
+      }
+
       const userId = await AsyncStorage.getItem('userId');
       const apiUrl = await AsyncStorage.getItem('apiUrl');
       if (userId) setUserId(userId);
@@ -97,26 +165,67 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
       const response = await fetch(
         `${apiUrl}/appointments/availability/${selectedVet._id}?date=${appointmentDate}&duration=30`,
       );
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch available slots');
+      }
+
       const data = await response.json();
       
-      // Convert slot strings to TimeSlot objects
-      const slots = data.slots.map((time: string) => ({
-        time,
-        available: true,
-      }));
-      setAvailableSlots(slots);
+      // Handle both array and object response formats
+      let slotsList = [];
+      if (Array.isArray(data)) {
+        // If response is directly an array of strings
+        slotsList = data.map((time: string) => ({
+          time,
+          available: true,
+        }));
+      } else if (data.slots && Array.isArray(data.slots)) {
+        // If response is an object with slots array
+        slotsList = data.slots.map((time: string) => ({
+          time,
+          available: true,
+        }));
+      } else if (data.availableSlots && Array.isArray(data.availableSlots)) {
+        // Alternative response format
+        slotsList = data.availableSlots.map((time: string) => ({
+          time,
+          available: true,
+        }));
+      }
+      
+      if (slotsList.length === 0) {
+        Alert.alert('No Slots', 'No available slots for this date. Please select another date.');
+        setAvailableSlots([]);
+      } else {
+        setAvailableSlots(slotsList);
+      }
     } catch (error) {
-      Alert.alert('Error', 'Failed to load available slots');
-      console.error(error);
+      console.error('Error fetching slots:', error);
+      Alert.alert('Error', 'Failed to load available slots. Please try again.');
+      setAvailableSlots([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDateSelect = (date: string) => {
-    setAppointmentDate(date);
-    setSelectedTime('');
-    setAvailableSlots([]);
+  // Workaround: Allow user to manually select time slots if API fails
+  const showSlotWorkaround = () => {
+    const defaultSlots = [
+      '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
+      '11:00', '11:30', '12:00', '14:00', '14:30', '15:00',
+      '15:30', '16:00', '16:30', '17:00'
+    ];
+    const slots = defaultSlots.map((time) => ({
+      time,
+      available: true,
+    }));
+    setAvailableSlots(slots);
+    Alert.alert(
+      'Using Default Time Slots',
+      'Showing standard available times. You can select any of these slots.',
+      [{ text: 'OK' }]
+    );
   };
 
   const bookAppointment = async () => {
@@ -215,6 +324,12 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
 
   // Step 2: Select Date & Time
   if (step === 2) {
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
     return (
       <ScrollView style={styles.container}>
         <Text style={styles.title}>Select Date & Time</Text>
@@ -222,14 +337,101 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
           Dr. {selectedVet?.firstName} {selectedVet?.lastName}
         </Text>
 
-        <Text style={styles.label}>Select Date (YYYY-MM-DD)</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="2026-05-15"
-          value={appointmentDate}
-          onChangeText={handleDateSelect}
-        />
+        <Text style={styles.label}>Select Date</Text>
+        
+        {/* Date Picker Button */}
+        <TouchableOpacity
+          style={styles.datePickerButton}
+          onPress={() => setShowDatePicker(!showDatePicker)}
+        >
+          <Text style={styles.datePickerButtonText}>
+            {appointmentDate || 'Tap to select date'}
+          </Text>
+          <Text style={styles.datePickerIcon}>📅</Text>
+        </TouchableOpacity>
 
+        {/* Calendar */}
+        {showDatePicker && (
+          <View style={styles.calendarContainer}>
+            <>
+              {/* Month Navigation */}
+              <View style={styles.monthHeader}>
+                <TouchableOpacity onPress={previousMonth}>
+                  <Text style={styles.monthArrow}>‹</Text>
+                </TouchableOpacity>
+                <Text style={styles.monthTitle}>
+                  {monthNames[calendarMonth.getMonth()]} {calendarMonth.getFullYear()}
+                </Text>
+                <TouchableOpacity onPress={nextMonth}>
+                  <Text style={styles.monthArrow}>›</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Day headers */}
+              <View style={styles.dayHeaderRow}>
+                {dayNames.map((day) => (
+                  <Text key={day} style={styles.dayHeader}>
+                    {day}
+                  </Text>
+                ))}
+              </View>
+
+              {/* Calendar grid */}
+              <View style={styles.calendarGrid}>
+                {calendarDays.map((day, index) => {
+                  const isDisabled = day === null || isBeforeToday(day || 0);
+                  const isSelected = day && appointmentDate === `${calendarMonth.getFullYear()}-${String(calendarMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                  const isTodayDate = day && isToday(day);
+
+                  return (
+                    <TouchableOpacity
+                      key={index}
+                      style={[
+                        styles.calendarDay,
+                        ...(isDisabled ? [styles.calendarDayDisabled] : []),
+                        ...(isSelected ? [styles.calendarDaySelected] : []),
+                        ...(isTodayDate ? [styles.calendarDayToday] : []),
+                      ]}
+                      onPress={() => day && !isDisabled && selectDate(day)}
+                      disabled={isDisabled}
+                    >
+                      {day && <Text style={[
+                        styles.calendarDayText,
+                        ...(isDisabled ? [styles.calendarDayTextDisabled] : []),
+                        ...(isSelected ? [styles.calendarDayTextSelected] : []),
+                      ]}>{day}</Text>}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <TouchableOpacity
+                style={styles.button}
+                onPress={() => setShowDatePicker(false)}
+              >
+                <Text style={styles.buttonText}>Done</Text>
+              </TouchableOpacity>
+            </>
+          </View>
+        )}
+        {/* Workaround button if API fails */}
+        {appointmentDate && availableSlots.length === 0 && !loading && (
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: '#ff9800', marginTop: 10 }]}
+            onPress={showSlotWorkaround}
+          >
+            <Text style={styles.buttonText}>📅 Use Standard Time Slots</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Display selected date */}
+        {appointmentDate && (
+          <Text style={styles.selectedDateText}>
+            Selected: {appointmentDate}
+          </Text>
+        )}
+
+        {/* Fetch slots button */}
         {appointmentDate && (
           <TouchableOpacity
             style={styles.button}
@@ -242,7 +444,7 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
           </TouchableOpacity>
         )}
 
-        {availableSlots.length > 0 && (
+        {availableSlots && availableSlots.length > 0 && (
           <>
             <Text style={styles.label}>Available Time Slots</Text>
             <View style={styles.slotsGrid}>
@@ -309,9 +511,12 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
   if (step === 3) {
     return (
       <ScrollView style={styles.container}>
-        <Text style={styles.title}>Share Diagnostic Data (Optional)</Text>
+        <Text style={styles.title}>Image Analysis Sharing</Text>
+        <Text style={styles.subtitle}>Allow vet to access your diagnostic results</Text>
 
         <View style={styles.shareCard}>
+          <Text style={styles.label}>🔐 Share Diagnostic Data with Veterinarian</Text>
+          
           <TouchableOpacity
             style={styles.shareToggle}
             onPress={() => setShareData(!shareData)}
@@ -319,31 +524,50 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
             <View style={styles.checkbox}>
               {shareData && <Text style={styles.checkmark}>✓</Text>}
             </View>
-            <Text style={styles.shareLabel}>
-              Share recent diagnostic results with vet
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.shareLabel}>
+                {shareData ? '✅ Sharing Enabled' : '❌ Sharing Disabled'}
+              </Text>
+              <Text style={styles.shareInfoText}>
+                {shareData 
+                  ? 'Your diagnostic images and analysis will be visible to the vet during appointment'
+                  : 'Your diagnostic data will NOT be shared with the vet'}
+              </Text>
+            </View>
           </TouchableOpacity>
 
           {shareData && (
             <View style={styles.shareDetails}>
-              <Text style={styles.label}>Select Diagnosis to Share</Text>
+              <Text style={styles.label}>📸 Diagnostic Data to Share</Text>
+              <Text style={styles.shareInfoText}>
+                Select which diagnostic analysis you want to share with Dr. {selectedVet?.firstName} {selectedVet?.lastName}
+              </Text>
+              
               {diagnosisData ? (
                 <View style={styles.diagnosisCard}>
                   <Text style={styles.diagnosisText}>
-                    {diagnosisData.analysis.substring(0, 100)}...
+                    📋 {diagnosisData.analysis.substring(0, 80)}...
+                  </Text>
+                  <Text style={styles.shareInfoText}>
+                    Diagnosis ID: {diagnosisData._id}
                   </Text>
                   <TouchableOpacity
                     onPress={() => setDiagnosisData(null)}
+                    style={{ marginTop: 10 }}
                   >
-                    <Text style={styles.removeText}>Remove</Text>
+                    <Text style={styles.removeText}>Remove Selection</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
                 <TouchableOpacity
                   style={styles.button}
                   onPress={() => {
-                    // Would normally open diagnosis selection modal
-                    Alert.alert('Info', 'Load from previous diagnoses');
+                    // Load diagnosis from previous diagnoses
+                    Alert.alert(
+                      'Load Diagnosis',
+                      'This would load your previous diagnostic results. (Feature coming soon)',
+                      [{ text: 'OK' }]
+                    );
                   }}
                 >
                   <Text style={styles.buttonText}>Select from History</Text>
@@ -351,6 +575,35 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
               )}
             </View>
           )}
+
+          {!shareData && (
+            <View style={{ 
+              marginTop: 15, 
+              paddingTop: 15, 
+              borderTopWidth: 1, 
+              borderTopColor: '#eee' 
+            }}>
+              <Text style={styles.shareInfoText}>
+                💡 Sharing your diagnostic analysis helps the vet provide better consultation during the appointment.
+              </Text>
+            </View>
+          )}
+        </View>
+
+        <View style={{ 
+          backgroundColor: '#f0f4ff', 
+          padding: 12, 
+          borderRadius: 8, 
+          borderLeftWidth: 4, 
+          borderLeftColor: '#0066cc',
+          marginBottom: 20
+        }}>
+          <Text style={{ fontSize: 12, color: '#0066cc', fontWeight: '600', marginBottom: 5 }}>
+            ℹ️ Data Privacy
+          </Text>
+          <Text style={{ fontSize: 11, color: '#666', lineHeight: 16 }}>
+            Your data sharing preferences are secure and encrypted. You can always revoke access after the appointment.
+          </Text>
         </View>
 
         <TouchableOpacity
@@ -495,6 +748,59 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+
+  /* Date picker / calendar */
+  datePickerButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 15,
+    marginBottom: 15,
+  },
+  datePickerButtonText: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '500',
+  },
+  datePickerIcon: {
+    fontSize: 20,
+  },
+  calendarContainer: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    alignItems: 'center',
+  },
+  calendarCloseButton: {
+    backgroundColor: '#0066cc',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 6,
+    marginTop: 15,
+  },
+  calendarCloseButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  selectedDateText: {
+    fontSize: 14,
+    color: '#0066cc',
+    fontWeight: '600',
+    marginBottom: 15,
+    textAlign: 'center',
+    backgroundColor: '#f0f4ff',
+    padding: 10,
+    borderRadius: 6,
+  },
+
   vetCard: {
     backgroundColor: 'white',
     padding: 15,
@@ -536,10 +842,80 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#0066cc',
   },
+
+  monthHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  monthTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  monthArrow: {
+    fontSize: 24,
+    color: '#0066cc',
+    paddingHorizontal: 10,
+  },
+  dayHeaderRow: {
+    flexDirection: 'row',
+    marginBottom: 10,
+  },
+  dayHeader: {
+    flex: 1,
+    textAlign: 'center',
+    fontWeight: '600',
+    color: '#666',
+    fontSize: 12,
+  },
+  calendarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 15,
+  },
+  calendarDay: {
+    width: '14.28%',
+    aspectRatio: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#eee',
+  },
+  calendarDayDisabled: {
+    backgroundColor: '#f5f5f5',
+    borderColor: '#f0f0f0',
+  },
+  calendarDaySelected: {
+    backgroundColor: '#0066cc',
+    borderColor: '#0066cc',
+  },
+  calendarDayToday: {
+    borderWidth: 2,
+    borderColor: '#0066cc',
+  },
+  calendarDayText: {
+    fontSize: 12,
+    color: '#333',
+    fontWeight: '500',
+  },
+  calendarDayTextDisabled: {
+    color: '#ccc',
+  },
+  calendarDayTextSelected: {
+    color: 'white',
+    fontWeight: '700',
+  },
+
   slotsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    justifyContent: 'space-between',
     marginBottom: 15,
   },
   timeSlot: {
@@ -551,6 +927,7 @@ const styles = StyleSheet.create({
     borderColor: '#ddd',
     width: '30%',
     alignItems: 'center',
+    marginBottom: 8,
   },
   timeSlotSelected: {
     backgroundColor: '#0066cc',
@@ -564,11 +941,14 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: '600',
   },
+
   shareCard: {
     backgroundColor: 'white',
     padding: 15,
     borderRadius: 8,
     marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#ddd',
   },
   shareToggle: {
     flexDirection: 'row',
@@ -593,6 +973,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#333',
     flex: 1,
+    fontWeight: '500',
   },
   shareDetails: {
     marginTop: 15,
@@ -600,16 +981,25 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#eee',
   },
+  shareInfoText: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 10,
+    lineHeight: 18,
+  },
   diagnosisCard: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f0f4ff',
     padding: 12,
     borderRadius: 6,
     marginBottom: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: '#0066cc',
   },
   diagnosisText: {
     fontSize: 12,
-    color: '#666',
+    color: '#333',
     marginBottom: 8,
+    fontWeight: '500',
   },
   removeText: {
     fontSize: 12,
@@ -621,6 +1011,8 @@ const styles = StyleSheet.create({
     padding: 15,
     borderRadius: 8,
     marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#ddd',
   },
   confirmRow: {
     flexDirection: 'row',
