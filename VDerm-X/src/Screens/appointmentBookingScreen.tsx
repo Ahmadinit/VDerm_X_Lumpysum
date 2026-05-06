@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getUserData } from '../utils/auth';
+import { BASE_URL } from '../config';
+import { Platform } from 'react-native';
 
 interface Vet {
   _id: string;
@@ -49,10 +51,11 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
   const [diagnosisData, setDiagnosisData] = useState<DiagnosisData | null>(null);
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState('');
-  const [apiUrl, setApiUrl] = useState('');
+  const [apiUrl, setApiUrl] = useState(BASE_URL);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [calendarDays, setCalendarDays] = useState<(number | null)[]>([]);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
   useEffect(() => {
     loadUserData();
@@ -98,12 +101,87 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
     setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1));
   };
 
+  const getApiUrl = () => apiUrl || BASE_URL;
+
+  const getApiBaseCandidates = () => {
+    const candidates = [
+      getApiUrl(),
+      BASE_URL,
+      Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000',
+    ];
+
+    return Array.from(new Set(candidates.filter(Boolean)));
+  };
+
+  const fetchWithTimeout = async (url: string, init?: RequestInit, timeoutMs: number = 8000) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      return await fetch(url, {
+        ...init,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
+
+  const fetchFromApi = async (path: string, init?: RequestInit) => {
+    let lastError: unknown = null;
+
+    for (const baseUrl of getApiBaseCandidates()) {
+      try {
+        return await fetchWithTimeout(`${baseUrl}${path}`, init);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError || new Error('Failed to reach API');
+  };
+
+  const fetchOccupiedSlots = async (date: string) => {
+    if (!selectedVet) {
+      Alert.alert('Error', 'Please select a vet first.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await fetchFromApi(`/appointments/availability/${selectedVet._id}?date=${date}&duration=30`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch available slots');
+      }
+
+      const data = await response.json();
+      const availableTimes = new Set<string>(data.slots || []);
+      const defaultSlots = [
+        '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
+        '11:00', '11:30', '12:00', '14:00', '14:30', '15:00',
+        '15:30', '16:00', '16:30', '17:00'
+      ];
+
+      setAvailableSlots(
+        defaultSlots.map((time) => ({
+          time,
+          available: availableTimes.has(time),
+        })),
+      );
+    } catch (error) {
+      console.error('Error fetching occupied slots:', error);
+      Alert.alert('Error', 'Failed to load occupied slots.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const selectDate = (day: number) => {
     const selectedDate = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day);
     const dateString = selectedDate.toISOString().split('T')[0];
     setAppointmentDate(dateString);
     setSelectedTime('');
-    setAvailableSlots([]);
+    showStandardTimeSlots();
     setShowDatePicker(false);
   };
 
@@ -126,24 +204,37 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
   const loadUserData = async () => {
     try {
       const currentUser = await getUserData();
-      if (currentUser?.role === 'vet') {
-        navigation.replace('VetDashboard');
+      if (!currentUser || !currentUser._id) {
+        console.log('No user logged in, redirecting to login');
+        navigation.replace('Login');
+        setDataLoaded(true);
         return;
       }
 
-      const userId = await AsyncStorage.getItem('userId');
-      const apiUrl = await AsyncStorage.getItem('apiUrl');
-      if (userId) setUserId(userId);
-      if (apiUrl) setApiUrl(apiUrl);
+      if (currentUser.role === 'vet') {
+        navigation.replace('VetDashboard');
+        setDataLoaded(true);
+        return;
+      }
+
+      setUserId(currentUser._id);
+      console.log('Loaded userId:', currentUser._id);
+
+      const storedApiUrl = await AsyncStorage.getItem('apiUrl');
+      if (storedApiUrl) setApiUrl(storedApiUrl);
+      
+      setDataLoaded(true);
     } catch (error) {
       console.error('Error loading user data:', error);
+      navigation.replace('Login');
+      setDataLoaded(true);
     }
   };
 
   const fetchVets = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${apiUrl}/vets`);
+      const response = await fetchFromApi('/vets');
       const data = await response.json();
       setVets(data);
     } catch (error) {
@@ -154,63 +245,8 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
     }
   };
 
-  const fetchAvailableSlots = async () => {
-    if (!selectedVet || !appointmentDate) {
-      Alert.alert('Error', 'Please select vet and date');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const response = await fetch(
-        `${apiUrl}/appointments/availability/${selectedVet._id}?date=${appointmentDate}&duration=30`,
-      );
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch available slots');
-      }
-
-      const data = await response.json();
-      
-      // Handle both array and object response formats
-      let slotsList = [];
-      if (Array.isArray(data)) {
-        // If response is directly an array of strings
-        slotsList = data.map((time: string) => ({
-          time,
-          available: true,
-        }));
-      } else if (data.slots && Array.isArray(data.slots)) {
-        // If response is an object with slots array
-        slotsList = data.slots.map((time: string) => ({
-          time,
-          available: true,
-        }));
-      } else if (data.availableSlots && Array.isArray(data.availableSlots)) {
-        // Alternative response format
-        slotsList = data.availableSlots.map((time: string) => ({
-          time,
-          available: true,
-        }));
-      }
-      
-      if (slotsList.length === 0) {
-        Alert.alert('No Slots', 'No available slots for this date. Please select another date.');
-        setAvailableSlots([]);
-      } else {
-        setAvailableSlots(slotsList);
-      }
-    } catch (error) {
-      console.error('Error fetching slots:', error);
-      Alert.alert('Error', 'Failed to load available slots. Please try again.');
-      setAvailableSlots([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Workaround: Allow user to manually select time slots if API fails
-  const showSlotWorkaround = () => {
+  // Show standard time slots
+  const showStandardTimeSlots = () => {
     const defaultSlots = [
       '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
       '11:00', '11:30', '12:00', '14:00', '14:30', '15:00',
@@ -221,14 +257,14 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
       available: true,
     }));
     setAvailableSlots(slots);
-    Alert.alert(
-      'Using Default Time Slots',
-      'Showing standard available times. You can select any of these slots.',
-      [{ text: 'OK' }]
-    );
   };
 
   const bookAppointment = async () => {
+    if (!userId) {
+      Alert.alert('Error', 'User data not loaded. Please go back and try again.');
+      return;
+    }
+    
     if (!selectedVet || !appointmentDate || !selectedTime || !reason) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
@@ -238,6 +274,7 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
       setLoading(true);
       const payload = {
         vetId: selectedVet._id,
+        userId: userId,
         appointmentDate,
         appointmentTime: selectedTime,
         reason,
@@ -245,12 +282,9 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
         dataSharing: shareData ? {
           enabled: true,
           diagnosisId: diagnosisData?._id,
-          images: diagnosisData ? [diagnosisData.image] : [],
-          analysisText: diagnosisData?.analysis,
-        } : undefined,
+        } : { enabled: false },
       };
-
-      const response = await fetch(`${apiUrl}/appointments/book`, {
+      const response = await fetchFromApi('/appointments/book', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -260,7 +294,8 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to book appointment');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to book appointment');
       }
 
       const appointment = await response.json();
@@ -269,16 +304,33 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
       // Store appointment ID and navigate to chat
       await AsyncStorage.setItem('lastAppointmentId', appointment._id);
       navigation.navigate('AppointmentChat', { appointmentId: appointment._id });
-    } catch (error) {
-      Alert.alert('Error', 'Failed to book appointment');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to book appointment');
       console.error(error);
     } finally {
       setLoading(false);
     }
   };
 
+  const getVetDisplayName = () => {
+    if (!selectedVet) {
+      return 'Veterinarian';
+    }
+
+    const fullName = `${selectedVet.firstName || ''} ${selectedVet.lastName || ''}`.trim();
+    return fullName ? `Dr. ${fullName}` : 'Veterinarian';
+  };
+
   // Step 1: Select Vet
   if (step === 1) {
+    if (!dataLoaded) {
+      return (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color="#0066cc" />
+        </View>
+      );
+    }
+
     return (
       <ScrollView style={styles.container}>
         <Text style={styles.title}>Select a Veterinarian</Text>
@@ -334,7 +386,7 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
       <ScrollView style={styles.container}>
         <Text style={styles.title}>Select Date & Time</Text>
         <Text style={styles.subtitle}>
-          Dr. {selectedVet?.firstName} {selectedVet?.lastName}
+          {getVetDisplayName()}
         </Text>
 
         <Text style={styles.label}>Select Date</Text>
@@ -414,11 +466,11 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
             </>
           </View>
         )}
-        {/* Workaround button if API fails */}
+        {/* Standard slots helper */}
         {appointmentDate && availableSlots.length === 0 && !loading && (
           <TouchableOpacity
             style={[styles.button, { backgroundColor: '#ff9800', marginTop: 10 }]}
-            onPress={showSlotWorkaround}
+            onPress={showStandardTimeSlots}
           >
             <Text style={styles.buttonText}>📅 Use Standard Time Slots</Text>
           </TouchableOpacity>
@@ -431,19 +483,6 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
           </Text>
         )}
 
-        {/* Fetch slots button */}
-        {appointmentDate && (
-          <TouchableOpacity
-            style={styles.button}
-            onPress={fetchAvailableSlots}
-            disabled={loading}
-          >
-            <Text style={styles.buttonText}>
-              {loading ? 'Loading...' : 'Get Available Slots'}
-            </Text>
-          </TouchableOpacity>
-        )}
-
         {availableSlots && availableSlots.length > 0 && (
           <>
             <Text style={styles.label}>Available Time Slots</Text>
@@ -454,16 +493,19 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
                   style={[
                     styles.timeSlot,
                     selectedTime === slot.time && styles.timeSlotSelected,
+                    !slot.available && styles.timeSlotDisabled,
                   ]}
-                  onPress={() => setSelectedTime(slot.time)}
+                  onPress={() => slot.available && setSelectedTime(slot.time)}
+                  disabled={!slot.available}
                 >
                   <Text
                     style={[
                       styles.timeSlotText,
                       selectedTime === slot.time && styles.timeSlotTextSelected,
+                      !slot.available && styles.timeSlotTextDisabled,
                     ]}
                   >
-                    {slot.time}
+                    {slot.time}{!slot.available ? ' (Booked)' : ''}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -492,16 +534,8 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
         <TouchableOpacity
           style={styles.button}
           onPress={() => setStep(3)}
-          disabled={!selectedTime || !reason}
         >
           <Text style={styles.buttonText}>Continue</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.buttonSecondary}
-          onPress={() => setStep(1)}
-        >
-          <Text style={styles.buttonTextSecondary}>Back</Text>
         </TouchableOpacity>
       </ScrollView>
     );
@@ -540,7 +574,7 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
             <View style={styles.shareDetails}>
               <Text style={styles.label}>📸 Diagnostic Data to Share</Text>
               <Text style={styles.shareInfoText}>
-                Select which diagnostic analysis you want to share with Dr. {selectedVet?.firstName} {selectedVet?.lastName}
+                Select which diagnostic analysis you want to share with {getVetDisplayName()}
               </Text>
               
               {diagnosisData ? (
@@ -610,7 +644,7 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
           style={styles.button}
           onPress={() => setStep(4)}
         >
-          <Text style={styles.buttonText}>Review & Confirm</Text>
+          <Text style={styles.buttonText}>Continue</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -632,9 +666,7 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
         <View style={styles.confirmCard}>
           <View style={styles.confirmRow}>
             <Text style={styles.confirmLabel}>Veterinarian:</Text>
-            <Text style={styles.confirmValue}>
-              Dr. {selectedVet?.firstName} {selectedVet?.lastName}
-            </Text>
+            <Text style={styles.confirmValue}>{getVetDisplayName()}</Text>
           </View>
 
           <View style={styles.confirmRow}>
@@ -691,6 +723,12 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
 };
 
 const styles = StyleSheet.create({
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+  },
   container: {
     flex: 1,
     padding: 20,
@@ -933,6 +971,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#0066cc',
     borderColor: '#0066cc',
   },
+  timeSlotDisabled: {
+    backgroundColor: '#f2f2f2',
+    borderColor: '#e0e0e0',
+    opacity: 0.65,
+  },
   timeSlotText: {
     fontSize: 12,
     color: '#333',
@@ -940,6 +983,9 @@ const styles = StyleSheet.create({
   timeSlotTextSelected: {
     color: 'white',
     fontWeight: '600',
+  },
+  timeSlotTextDisabled: {
+    color: '#999',
   },
 
   shareCard: {

@@ -64,7 +64,7 @@ export class AppointmentsService {
     const bookedAppointments = await this.appointmentModel.find({
       vetId: new Types.ObjectId(vetId),
       appointmentDate: { $gte: startOfDay, $lte: endOfDay },
-      status: { $in: ['confirmed', 'completed'] },
+      status: { $in: ['pending', 'confirmed', 'completed'] },
     });
 
     // Generate available slots
@@ -146,7 +146,7 @@ export class AppointmentsService {
       vetId: new Types.ObjectId(vetId),
       appointmentDate,
       appointmentTime,
-      status: { $in: ['confirmed', 'completed'] },
+      status: { $in: ['pending', 'confirmed', 'completed'] },
     });
 
     if (conflictingAppointments) {

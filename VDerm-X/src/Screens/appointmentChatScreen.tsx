@@ -15,6 +15,8 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { io, Socket } from 'socket.io-client';
+import { getUserData } from '../utils/auth';
+import { BASE_URL } from '../config';
 
 interface Message {
   _id: string;
@@ -61,25 +63,24 @@ const AppointmentChatScreen = ({ route }: any) => {
 
   const initializeChat = async () => {
     try {
-      const userId = await AsyncStorage.getItem('userId');
-      const userRole = await AsyncStorage.getItem('userRole') || 'user';
-      const apiUrl = await AsyncStorage.getItem('apiUrl');
-
-      if (!userId || !apiUrl) {
-        Alert.alert('Error', 'Missing user data');
+      const currentUser = await getUserData();
+      if (!currentUser || !currentUser._id) {
+        Alert.alert('Error', 'Missing user data. Please log in again.');
         return;
       }
 
-      setUserId(userId);
-      setUserRole(userRole);
-      setApiUrl(apiUrl);
+      const storedApiUrl = await AsyncStorage.getItem('apiUrl') || BASE_URL;
+
+      setUserId(currentUser._id);
+      setUserRole(currentUser.role || 'user');
+      setApiUrl(storedApiUrl);
 
       // Connect to WebSocket
-      const wsUrl = apiUrl.replace('http://', 'ws://').replace('https://', 'wss://');
+      const wsUrl = storedApiUrl.replace('http://', 'ws://').replace('https://', 'wss://');
       const socket = io(wsUrl, {
         query: {
-          userId,
-          userRole,
+          userId: currentUser._id,
+          userRole: currentUser.role,
         },
         transports: ['websocket', 'polling'],
       });
