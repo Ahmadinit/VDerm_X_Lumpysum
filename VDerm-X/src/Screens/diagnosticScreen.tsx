@@ -20,6 +20,22 @@ const DiagnosticScreen = () => {
     loadUserData();
   }, []);
 
+  const isMongoObjectId = (value: string) => /^[a-fA-F0-9]{24}$/.test(value);
+
+  const resolveUserId = async (): Promise<string | null> => {
+    const latestUserData = await getUserData();
+    if (latestUserData?._id) {
+      setUserData(latestUserData);
+      return String(latestUserData._id).trim();
+    }
+
+    if (userData?._id) {
+      return String(userData._id).trim();
+    }
+
+    return null;
+  };
+
   const loadUserData = async () => {
     const data = await getUserData();
     setUserData(data);
@@ -86,11 +102,15 @@ const DiagnosticScreen = () => {
     setPredictionResult(null);
 
     try {
-      const headers: any = {};
-      
-      if (userData?._id) {
-        headers['x-user-id'] = userData._id;
+      const resolvedUserId = await resolveUserId();
+      if (!resolvedUserId || !isMongoObjectId(resolvedUserId)) {
+        Alert.alert('Session Error', 'Invalid user session. Please log in again.');
+        return;
       }
+
+      const headers: any = {
+        'x-user-id': resolvedUserId,
+      };
 
       const response = await fetch(`${BASE_URL}/images/predicts`, {
         method: 'POST',
@@ -102,8 +122,13 @@ const DiagnosticScreen = () => {
 
       if (response.ok && !data?.error) {
         setPredictionResult(data);
-        if (data.diagnosisId) {
-          setDiagnosisId(data.diagnosisId);
+        setDiagnosisId(data?.diagnosisId || null);
+
+        if (!data?.diagnosisId) {
+          Alert.alert(
+            'Notice',
+            'Analysis is complete, but this result was not linked to diagnosis history. You can still start a chat.',
+          );
         }
       } else {
         Alert.alert("Error", data?.error || data?.message || "An error occurred.");
@@ -117,8 +142,9 @@ const DiagnosticScreen = () => {
   };
 
   const handleChatAboutResult = async () => {
-    if (!diagnosisId || !userData?._id) {
-      Alert.alert("Error", "Cannot start chat without diagnosis data");
+    const resolvedUserId = await resolveUserId();
+    if (!resolvedUserId || !isMongoObjectId(resolvedUserId)) {
+      Alert.alert("Error", "Cannot start chat without a valid user session");
       return;
     }
 
@@ -127,16 +153,18 @@ const DiagnosticScreen = () => {
       const classification = predictionResult?.prediction?.classification || predictionResult?.classification || "Diagnosis";
       const title = `Chat about ${classification} Result`;
 
+      const payload: any = { title };
+      if (diagnosisId) {
+        payload.diagnosisId = diagnosisId;
+      }
+
       const response = await fetch(`${BASE_URL}/chat/conversations`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-user-id": userData._id, // Backend requires userId in headers, not body
+          "x-user-id": resolvedUserId, // Backend requires userId in headers, not body
         },
-        body: JSON.stringify({
-          diagnosisId: diagnosisId,
-          title: title,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -262,15 +290,13 @@ const DiagnosticScreen = () => {
             </Text>
           </View>
 
-          {diagnosisId && (
-            <TouchableOpacity 
-              style={styles.chatButton}
-              onPress={handleChatAboutResult}
-            >
-              <Ionicons name="chatbubble-ellipses" size={24} color="#FFFFFF" />
-              <Text style={styles.chatButtonText}>Chat about this result</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity 
+            style={styles.chatButton}
+            onPress={handleChatAboutResult}
+          >
+            <Ionicons name="chatbubble-ellipses" size={24} color="#FFFFFF" />
+            <Text style={styles.chatButtonText}>Chat about this result</Text>
+          </TouchableOpacity>
 
           <TouchableOpacity 
             style={styles.newAnalysisButton}

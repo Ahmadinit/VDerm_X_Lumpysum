@@ -16,8 +16,7 @@ import { getUserData } from '../utils/auth';
 interface Appointment {
   _id: string;
   vetId: {
-    firstName: string;
-    lastName: string;
+    username: string;
     specializations: string[];
   };
   appointmentDate: string;
@@ -32,7 +31,7 @@ const AppointmentsHistoryScreen = ({ navigation }: any) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [userId, setUserId] = useState('');
-  const [apiUrl, setApiUrl] = useState('');
+  const [apiUrl, setApiUrl] = useState<string | null>(null);
 
   useEffect(() => {
     loadUserData();
@@ -46,29 +45,51 @@ const AppointmentsHistoryScreen = ({ navigation }: any) => {
         return;
       }
 
-      const userId = await AsyncStorage.getItem('userId');
+      if (!user || !user._id) {
+        Alert.alert('Error', 'Missing user data. Please log in again.');
+        setLoading(false);
+        return;
+      }
+
       const apiUrl = await AsyncStorage.getItem('apiUrl');
-      if (userId) setUserId(userId);
+      setUserId(user._id);
       if (apiUrl) setApiUrl(apiUrl);
-      await fetchAppointments(userId, apiUrl);
+      await fetchAppointments(user._id, apiUrl);
     } catch (error) {
       console.error('Error loading user data:', error);
       setLoading(false);
     }
   };
 
-  const fetchAppointments = async (userId?: string, apiUrl?: string) => {
+  const fetchAppointments = async (userId?: string, apiUrl?: string | null) => {
     try {
-      const id = userId || (await AsyncStorage.getItem('userId'));
-      const url = apiUrl || (await AsyncStorage.getItem('apiUrl'));
+      let id = userId;
+      let url = apiUrl;
+      
+      // If not provided, get from user data
+      if (!id || !url) {
+        const user = await getUserData();
+        if (user?.role === 'vet') {
+          navigation.replace('VetAppointments');
+          return;
+        }
+        if (!user || !user._id) {
+          Alert.alert('Error', 'Missing user data. Please log in again.');
+          setLoading(false);
+          return;
+        }
+        id = user._id;
+        url = url || (await AsyncStorage.getItem('apiUrl'));
+      }
 
       if (!id || !url) {
-        Alert.alert('Error', 'Missing user data');
+        Alert.alert('Error', 'Missing user data or API configuration');
         setLoading(false);
         return;
       }
 
       const response = await fetch(`${url}/appointments/user/${id}`, {
+        method: 'GET',
         headers: { 'x-user-id': id },
       });
 
@@ -92,7 +113,7 @@ const AppointmentsHistoryScreen = ({ navigation }: any) => {
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchAppointments();
+    fetchAppointments(userId, apiUrl);
   };
 
   const getStatusColor = (status: string) => {
@@ -156,10 +177,10 @@ const AppointmentsHistoryScreen = ({ navigation }: any) => {
         <View style={styles.headerRow}>
           <View style={styles.vetInfo}>
             <Text style={styles.vetName}>
-              Dr. {item.vetId.firstName} {item.vetId.lastName}
+              Dr. {item.vetId?.username || 'Unknown'}
             </Text>
             <Text style={styles.specialization}>
-              {item.vetId.specializations.join(', ')}
+              {Array.isArray(item.vetId?.specializations) ? item.vetId!.specializations.join(', ') : 'N/A'}
             </Text>
           </View>
           <View

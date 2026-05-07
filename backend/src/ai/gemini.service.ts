@@ -9,6 +9,7 @@ export class GeminiService {
   private readonly logger = new Logger(GeminiService.name);
   private genAI: GoogleGenerativeAI;
   private model: any;
+  private readonly maxRetries = 3;
 
   constructor() {
     if (!process.env.GEMINI_API_KEY) {
@@ -51,6 +52,25 @@ Based on this diagnosis result, provide helpful information and answer the user'
     return `Lumpy: ${lumpyProb}%, Not Lumpy: ${notLumpyProb}%`;
   }
 
+  private async delay(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private isRetryableError(errorMessage: string): boolean {
+    const message = errorMessage.toLowerCase();
+    return (
+      message.includes('503') ||
+      message.includes('service unavailable') ||
+      message.includes('high demand') ||
+      message.includes('temporarily unavailable') ||
+      message.includes('429') ||
+      message.includes('too many requests') ||
+      message.includes('deadline') ||
+      message.includes('timeout') ||
+      message.includes('unavailable')
+    );
+  }
+
   async sendMessage(
     userMessage: string,
     conversationHistory: any[] = [],
@@ -81,13 +101,28 @@ Based on this diagnosis result, provide helpful information and answer the user'
       fullPrompt += `User: ${userMessage}\nAssistant:`;
 
       this.logger.log('Sending message to Gemini AI...');
-      
-      const result = await this.model.generateContent(fullPrompt);
-      const response = await result.response;
-      const text = response.text();
 
-      this.logger.log('Received response from Gemini AI');
-      return text;
+      let lastErrorMessage = '';
+      for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+        try {
+          const result = await this.model.generateContent(fullPrompt);
+          const response = await result.response;
+          const text = response.text();
+
+          this.logger.log(`Received response from Gemini AI on attempt ${attempt}`);
+          return text;
+        } catch (error: unknown) {
+          lastErrorMessage = error instanceof Error ? error.message : String(error);
+          this.logger.warn(`Gemini attempt ${attempt} failed: ${lastErrorMessage}`);
+
+          const shouldRetry = this.isRetryableError(lastErrorMessage) && attempt < this.maxRetries;
+          if (!shouldRetry) {
+            break;
+          }
+
+          await this.delay(500 * attempt * attempt);
+        }
+      }
 
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -98,8 +133,10 @@ Based on this diagnosis result, provide helpful information and answer the user'
         return 'I apologize, but the AI service is not properly configured. Please contact support for assistance with your cattle health concerns.';
       }
       
-      return 'I apologize, but I encountered an error processing your request. Please try again or consult with a veterinarian for immediate assistance.';
+      return 'I apologize, but I am temporarily busy right now. Please try again in a moment, or consult with a veterinarian for immediate assistance.';
     }
+
+    return 'I apologize, but I am temporarily busy right now. Please try again in a moment, or consult with a veterinarian for immediate assistance.';
   }
 
   async generateConversationTitle(firstMessage: string, diagnosisData?: any): Promise<string> {

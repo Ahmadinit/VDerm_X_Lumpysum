@@ -49,14 +49,19 @@ const AppointmentChatScreen = ({ route }: any) => {
   const [sharedDiagnostic, setSharedDiagnostic] = useState<DiagnosticData | null>(null);
   const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
   const flatListRef = useRef<FlatList>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout>();
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [apiUrl, setApiUrl] = useState('');
+  const [connectionError, setConnectionError] = useState(false);
+  const connectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     initializeChat();
     return () => {
       if (socketRef.current) {
         socketRef.current.disconnect();
+      }
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
       }
     };
   }, []);
@@ -75,9 +80,8 @@ const AppointmentChatScreen = ({ route }: any) => {
       setUserRole(currentUser.role || 'user');
       setApiUrl(storedApiUrl);
 
-      // Connect to WebSocket
-      const wsUrl = storedApiUrl.replace('http://', 'ws://').replace('https://', 'wss://');
-      const socket = io(wsUrl, {
+      // Connect to Socket.IO using the HTTP origin; the client upgrades to WebSocket automatically
+      const socket = io(storedApiUrl, {
         query: {
           userId: currentUser._id,
           userRole: currentUser.role,
@@ -87,15 +91,33 @@ const AppointmentChatScreen = ({ route }: any) => {
 
       socketRef.current = socket;
 
+      // Set a connection timeout
+      connectionTimeoutRef.current = setTimeout(() => {
+        if (loading) {
+          console.warn('Chat connection timeout - no response from server');
+          setLoading(false);
+          setConnectionError(true);
+          socket.disconnect();
+        }
+      }, 10000);
+
       // Handle connection
       socket.on('connect', () => {
         console.log('Connected to chat server');
+        // Clear timeout on successful connection
+        if (connectionTimeoutRef.current) {
+          clearTimeout(connectionTimeoutRef.current);
+        }
         // Join appointment room
         socket.emit('join_appointment', { appointmentId });
       });
 
       // Receive chat history
       socket.on('chat_history', (data: any) => {
+        // Clear timeout on successful data reception
+        if (connectionTimeoutRef.current) {
+          clearTimeout(connectionTimeoutRef.current);
+        }
         const msgs = data.messages.map((msg: any) => ({
           ...msg,
           timestamp: new Date(msg.timestamp),
@@ -103,6 +125,7 @@ const AppointmentChatScreen = ({ route }: any) => {
         setMessages(msgs.reverse());
         setSharedDiagnostic(data.sharedDiagnosticData);
         setLoading(false);
+        setConnectionError(false);
       });
 
       // Receive new message
@@ -308,6 +331,25 @@ const AppointmentChatScreen = ({ route }: any) => {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#0066cc" />
+        <Text style={styles.loadingText}>Connecting to chat...</Text>
+      </View>
+    );
+  }
+
+  if (connectionError) {
+    return (
+      <View style={styles.centerContainer}>
+        <Text style={styles.errorText}>Unable to connect to chat</Text>
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={() => {
+            setConnectionError(false);
+            setLoading(true);
+            initializeChat();
+          }}
+        >
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -392,6 +434,30 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#666',
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#d32f2f',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 30,
+    backgroundColor: '#0066cc',
+    borderRadius: 6,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   headerBar: {
     backgroundColor: '#0066cc',

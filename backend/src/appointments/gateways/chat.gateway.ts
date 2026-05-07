@@ -1,44 +1,24 @@
 // src/appointments/gateways/chat.gateway.ts
 import { Injectable } from '@nestjs/common';
+import {
+  WebSocketGateway,
+  SubscribeMessage,
+  MessageBody,
+  ConnectedSocket,
+  WebSocketServer,
+  WsException,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+} from '@nestjs/websockets';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { Server, Socket } from 'socket.io';
 import { AppointmentChat, AppointmentChatDocument } from '../schema/appointment-chat.schema';
 import { Appointment, AppointmentDocument } from '../schema/appointment.schema';
 
-// Type definitions for Socket.io (no import needed, types only)
-type Socket = any;
-type Server = any;
-
-interface AuthSocket {
+interface AuthSocket extends Socket {
   userId?: string;
   userRole?: string;
-  handshake?: any;
-  id?: string;
-  join?: (room: string) => void;
-  leave?: (room: string) => void;
-  emit?: (event: string, data: any) => void;
-  disconnect?: () => void;
-}
-
-// Decorators - create simple no-op versions if not available
-const WebSocketGateway = (config?: any) => (target: any) => target;
-const SubscribeMessage = (event: string) => (target: any, propertyKey: string, descriptor: any) => descriptor;
-const MessageBody = () => (target: any, propertyKey: string | symbol | undefined, parameterIndex: number) => {};
-const ConnectedSocket = () => (target: any, propertyKey: string | symbol | undefined, parameterIndex: number) => {};
-
-interface OnGatewayConnection {
-  handleConnection(client: AuthSocket): any;
-}
-
-interface OnGatewayDisconnect {
-  handleDisconnect(client: AuthSocket): any;
-}
-
-class WsException extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'WsException';
-  }
 }
 
 @WebSocketGateway({
@@ -50,6 +30,7 @@ class WsException extends Error {
 })
 @Injectable()
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+  @WebSocketServer()
   private server: Server;
   // Track connected users: key = userId, value = Set of socket IDs
   private connectedUsers = new Map<string, Set<string>>();
@@ -234,8 +215,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         appointmentId,
         status: 'sent',
       });
-    } catch (error) {
-      throw new WsException(`Failed to send message: ${error.message}`);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new WsException(`Failed to send message: ${msg}`);
     }
   }
 
@@ -278,8 +260,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         readBy: userId,
         timestamp: new Date(),
       });
-    } catch (error) {
-      throw new WsException(`Failed to mark message as read: ${error.message}`);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new WsException(`Failed to mark message as read: ${msg}`);
     }
   }
 
@@ -323,8 +306,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         sharedData: chat.sharedDiagnosticData,
         sharedBy: client.userId,
       });
-    } catch (error) {
-      throw new WsException(`Failed to share diagnostic data: ${error.message}`);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new WsException(`Failed to share diagnostic data: ${msg}`);
     }
   }
 

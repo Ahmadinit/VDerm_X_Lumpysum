@@ -34,7 +34,7 @@ export class ChatService {
     const chat = await this.chatModel
       .findOne({ appointmentId: new Types.ObjectId(appointmentId) })
       .populate('userId', 'username email')
-      .populate('vetId', 'firstName lastName specializations')
+      .populate('vetId', 'username specialization profileImage')
       .exec();
 
     if (!chat) {

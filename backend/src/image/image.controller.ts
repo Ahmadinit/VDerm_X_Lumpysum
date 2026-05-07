@@ -82,6 +82,7 @@ import * as multer from 'multer';
 import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { Types } from 'mongoose';
 import { DiagnosisService } from '../diagnosis/diagnosis.service';
 
 @Controller('images')
@@ -198,22 +199,35 @@ export class ImageControllerr {
 
       const predictionData = JSON.parse(trimmed.slice(jsonStart, jsonEnd + 1));
 
-      // Auto-save diagnosis if userId is provided
+      const sanitizedUserId = typeof userId === 'string' ? userId.trim() : '';
+      const canSaveDiagnosis =
+        sanitizedUserId.length > 0 &&
+        sanitizedUserId !== 'null' &&
+        sanitizedUserId !== 'undefined' &&
+        Types.ObjectId.isValid(sanitizedUserId);
+
+      // Auto-save diagnosis if a valid userId is provided
       let diagnosisId = null;
-      if (userId) {
+      if (canSaveDiagnosis) {
         try {
           const imageUrl = `uploads/${file.filename}`;
           const savedDiagnosis = await this.diagnosisService.saveDiagnosis(
-            userId,
+            sanitizedUserId,
             imageUrl,
             predictionData,
           );
           diagnosisId = (savedDiagnosis as any)._id.toString();
-          console.log('Diagnosis saved successfully for user:', userId, 'ID:', diagnosisId);
-        } catch (diagnosisError) {
-          console.error('Failed to save diagnosis:', diagnosisError.message);
+          console.log('Diagnosis saved successfully for user:', sanitizedUserId, 'ID:', diagnosisId);
+        } catch (diagnosisError: unknown) {
+          if (diagnosisError instanceof Error) {
+            console.error('Failed to save diagnosis:', diagnosisError.message);
+          } else {
+            console.error('Failed to save diagnosis:', diagnosisError);
+          }
           // Don't fail the request if diagnosis saving fails
         }
+      } else if (sanitizedUserId) {
+        console.warn('Skipping diagnosis save due to invalid x-user-id header:', sanitizedUserId);
       }
 
       return { 

@@ -11,7 +11,7 @@ export class AppointmentChat {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Vet', required: true })
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   vetId: Types.ObjectId;
 
   // Messages array

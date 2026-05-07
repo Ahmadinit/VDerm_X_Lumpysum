@@ -18,9 +18,8 @@ import { Platform } from 'react-native';
 
 interface Vet {
   _id: string;
-  firstName: string;
-  lastName: string;
-  specializations: string[];
+  username: string;
+  specialization?: string;
   profileImage?: string;
   averageRating: number;
   totalReviews: number;
@@ -301,9 +300,8 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
       const appointment = await response.json();
       Alert.alert('Success', 'Appointment booked successfully');
       
-      // Store appointment ID and navigate to chat
-      await AsyncStorage.setItem('lastAppointmentId', appointment._id);
-      navigation.navigate('AppointmentChat', { appointmentId: appointment._id });
+      // Navigate to appointments history
+      navigation.navigate('AppointmentsHistory');
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to book appointment');
       console.error(error);
@@ -317,8 +315,8 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
       return 'Veterinarian';
     }
 
-    const fullName = `${selectedVet.firstName || ''} ${selectedVet.lastName || ''}`.trim();
-    return fullName ? `Dr. ${fullName}` : 'Veterinarian';
+    const displayName = selectedVet.username?.trim();
+    return displayName ? `Dr. ${displayName}` : 'Veterinarian';
   };
 
   // Step 1: Select Vet
@@ -354,10 +352,10 @@ const AppointmentBookingScreen = ({ navigation, route }: any) => {
                 }}
               >
                 <Text style={styles.vetName}>
-                  Dr. {item.firstName} {item.lastName}
+                  Dr. {item.username?.trim() || 'Unknown'}
                 </Text>
                 <Text style={styles.vetSpec}>
-                  {item.specializations.join(', ')}
+                  {item.specialization || 'N/A'}
                 </Text>
                 <View style={styles.ratingRow}>
                   <Text style={styles.rating}>⭐ {item.averageRating}/5</Text>

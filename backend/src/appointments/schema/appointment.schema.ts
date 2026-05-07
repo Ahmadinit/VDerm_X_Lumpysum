@@ -9,7 +9,7 @@ export class Appointment {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId; // User who booked the appointment
 
-  @Prop({ type: Types.ObjectId, ref: 'Vet', required: true })
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   vetId: Types.ObjectId; // Vet for the appointment
 
   // Enhanced Booking Details
@@ -68,7 +68,7 @@ export class Appointment {
       ],
       followUpDate: Date,
       addedAt: Date,
-      addedBy: { type: Types.ObjectId, ref: 'Vet' },
+      addedBy: { type: Types.ObjectId, ref: 'User' },
     },
     default: null,
   })

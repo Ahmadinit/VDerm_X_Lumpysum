@@ -184,7 +184,7 @@ export class AppointmentsService {
   async getUserAppointments(userId: string): Promise<Appointment[]> {
     return this.appointmentModel
       .find({ userId: new Types.ObjectId(userId) })
-      .populate('vetId', 'firstName lastName specializations profileImage')
+      .populate('vetId', 'username specialization profileImage')
       .populate('linkedChatId')
       .sort({ appointmentDate: 1 })
       .exec();
